@@ -28,6 +28,12 @@ public class YoloHelper {
     private final float SCORE_THRESHOLD = 0.3f;
     private final float IOU_THRESHOLD = 0.5f;
 
+    private List<String> lastDetectedClasses = new ArrayList<>();
+
+    public List<String> getLastDetectedClasses() {
+        return lastDetectedClasses;
+    }
+
     public YoloHelper(Context context, String modelPath, String labelPath) throws IOException {
         // TFLite 모델 로드
         ByteBuffer modelBuffer = FileUtil.loadMappedFile(context, modelPath);
@@ -59,6 +65,7 @@ public class YoloHelper {
             for (Detection det : nmsDetections) {
                 String label = labels.get(det.classId);
                 Log.d("YoloHelper", "Detected: " + label + " with confidence: " + det.score);
+                lastDetectedClasses.add(label);
             }
         }
 
@@ -95,6 +102,7 @@ public class YoloHelper {
     private List<Detection> decodeOutput(float[][] output) {
         List<Detection> detections = new ArrayList<>();
 
+        lastDetectedClasses.clear();
         for (int i = 0; i < NUM_BOXES; i++) {
             float confidence = output[i][4];
             if (confidence < SCORE_THRESHOLD) continue;
@@ -221,4 +229,5 @@ public class YoloHelper {
             this.classId = classId;
         }
     }
+
 }

@@ -35,6 +35,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -153,6 +154,13 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
         // 회전 각도 얻기
         int rotationDegrees = image.getImageInfo().getRotationDegrees();
 
+        List<String> detected = yoloHelper.getLastDetectedClasses();  // 이 메서드는 직접 만들어야 함
+
+        runOnUiThread(() -> {
+            if (!detected.isEmpty() &&) {
+                vibrate();
+            }
+        });
         return rotateBitmap(bitmap, rotationDegrees);
     }
 
