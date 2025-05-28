@@ -245,7 +245,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         }
     }
 
-    private void receive(ArrayDeque<byte[]> datas) {
+    private void receive(ArrayDeque<byte[]> datas) {//TODO
         SpannableStringBuilder spn = new SpannableStringBuilder();
         for (byte[] data : datas) {
             if (hexEnabled) {

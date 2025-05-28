@@ -249,7 +249,7 @@ public class DevicesFragment extends ListFragment {
     }
 
     @SuppressLint("MissingPermission")
-    private void updateScan(BluetoothDevice device) {
+    private void updateScan(BluetoothDevice device) {//TODO
         if(scanState == ScanState.NONE)
             return;
         BluetoothUtil.Device device2 = new BluetoothUtil.Device(device); // slow getName() only once
