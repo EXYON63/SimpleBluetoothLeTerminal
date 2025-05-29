@@ -64,6 +64,7 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
 
         previewView = findViewById(R.id.previewView);
         imageViewOverlay = findViewById(R.id.imageViewOverlay);
+        new DevicesFragment().startScan();
 
         try {
             yoloHelper = new YoloHelper(this, "yolov5_640.tflite", "coco.txt");

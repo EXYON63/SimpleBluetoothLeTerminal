@@ -198,7 +198,7 @@ public class DevicesFragment extends ListFragment {
         }
     }
 
-    private void startScan() {
+    public void startScan() {
         if(scanState != ScanState.NONE)
             return;
         ScanState nextScanState = ScanState.LE_SCAN;
