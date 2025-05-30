@@ -17,13 +17,18 @@ import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
+import android.net.wifi.WifiManager;
+import android.net.wifi.WifiNetworkSuggestion;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -45,6 +50,12 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentManager;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
@@ -85,6 +96,7 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
 
     private static final UUID HM10_SERVICE_UUID = UUID.fromString("0000FFE0-0000-1000-8000-00805F9B34FB");
     private static final UUID HM10_CHARACTERISTIC_UUID = UUID.fromString("0000FFE1-0000-1000-8000-00805F9B34FB");
+    private WifiConnectionReceiver wifiReceiver;
 
     int speed = 0;
 
@@ -117,11 +129,35 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
             startCamera();
+            wifiReceiver = new WifiConnectionReceiver();
+            registerReceiver(wifiReceiver, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+
+            // WifiNetworkSuggestion 호출 등 나머지 로직 수행
+            setupWifiSuggestion();
         } else {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, 101);
         }
     }
 
+    private void setupWifiSuggestion() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            WifiNetworkSuggestion suggestion = new WifiNetworkSuggestion.Builder()
+                    .setSsid("ESP32CAM_HOSPOT")
+                    // .setWpa2Passphrase("your_password") // 필요 시 비밀번호 설정
+                    .build();
+
+            List<WifiNetworkSuggestion> suggestions = Collections.singletonList(suggestion);
+
+            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            int status = wifiManager.addNetworkSuggestions(suggestions);
+
+            if (status == WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS) {
+                Log.d("MainActivity", "Wi-Fi 네트워크 제안 성공");
+            } else {
+                Log.d("MainActivity", "Wi-Fi 제안 실패: " + status);
+            }
+        }
+    }
     @Override
     public void onBackStackChanged() {
         Objects.requireNonNull(getSupportActionBar()).setDisplayHomeAsUpEnabled(getSupportFragmentManager().getBackStackEntryCount()>0);
@@ -379,8 +415,9 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
         }
     }
 
-    private static final String URL = "http://192.168.4.1";
-    private void fetchJsonFromUrl() {
+    private static final String URL = "http://192.168.4.1/json";
+
+    private void getTrafficStatus() {
         OkHttpClient client = new OkHttpClient();
 
         Request request = new Request.Builder()
@@ -411,5 +448,31 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
                 }
             }
         });
+    }
+
+    public class WifiConnectionReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (ConnectivityManager.CONNECTIVITY_ACTION.equals(intent.getAction())) {
+                ConnectivityManager connManager =
+                        (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+                NetworkInfo networkInfo = connManager.getActiveNetworkInfo();
+
+                if (networkInfo != null &&
+                        networkInfo.isConnected() &&
+                        networkInfo.getType() == ConnectivityManager.TYPE_WIFI) {
+
+                    WifiManager wifiManager =
+                            (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                    WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                    String ssid = wifiInfo.getSSID();
+
+                    if (ssid != null && ssid.replace("\"", "").equals("ESP32CAM_HOSPOT")) {
+                        Log.d("WifiReceiver", "✅ ESP32CAM_HOSPOT에 연결됨!");
+                        // 여기서 연결 성공시 원하는 작업 실행 가능
+                    }
+                }
+            }
+        }
     }
 }
