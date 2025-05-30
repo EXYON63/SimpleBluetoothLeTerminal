@@ -38,11 +38,11 @@ import java.util.Collections;
  */
 public class DevicesFragment extends ListFragment {
 
-    private enum ScanState { NONE, LE_SCAN, DISCOVERY, DISCOVERY_FINISHED }
-    private ScanState scanState = ScanState.NONE;
+    //enum ScanState { NONE, LE_SCAN, DISCOVERY, DISCOVERY_FINISHED }
+    //private ScanState scanState = ScanState.NONE;
     private static final long LE_SCAN_PERIOD = 10000; // similar to bluetoothAdapter.startDiscovery
     private final Handler leScanStopHandler = new Handler();
-    private final BluetoothAdapter.LeScanCallback leScanCallback;
+    /*private final BluetoothAdapter.LeScanCallback leScanCallback;
     private final Runnable leScanStopCallback;
     private final BroadcastReceiver discoveryBroadcastReceiver;
     private final IntentFilter discoveryIntentFilter;
@@ -54,10 +54,10 @@ public class DevicesFragment extends ListFragment {
     ActivityResultLauncher<String[]> requestBluetoothPermissionLauncherForStartScan;
     ActivityResultLauncher<String> requestLocationPermissionLauncherForStartScan;
 
-    public DevicesFragment() {
+    /*public DevicesFragment() {
         leScanCallback = (device, rssi, scanRecord) -> {
             if(device != null && getActivity() != null) {
-                getActivity().runOnUiThread(() -> { updateScan(device); });
+                //getActivity().runOnUiThread(() -> { updateScan(device); });
             }
         };
         discoveryBroadcastReceiver = new BroadcastReceiver() {
@@ -67,19 +67,19 @@ public class DevicesFragment extends ListFragment {
                 if(BluetoothDevice.ACTION_FOUND.equals(intent.getAction())) {
                     BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                     if(device.getType() != BluetoothDevice.DEVICE_TYPE_CLASSIC && getActivity() != null) {
-                        getActivity().runOnUiThread(() -> updateScan(device));
+                        //getActivity().runOnUiThread(() -> updateScan(device));
                     }
                 }
                 if(BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(intent.getAction())) {
-                    scanState = ScanState.DISCOVERY_FINISHED; // don't cancel again
-                    stopScan();
+                    //scanState = ScanState.DISCOVERY_FINISHED; // don't cancel again
+                    //stopScan();
                 }
             }
         };
         discoveryIntentFilter = new IntentFilter();
         discoveryIntentFilter.addAction(BluetoothDevice.ACTION_FOUND);
         discoveryIntentFilter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
-        leScanStopCallback = this::stopScan; // w/o explicit Runnable, a new lambda would be created on each postDelayed, which would not be found again by removeCallbacks
+        //leScanStopCallback = this::stopScan; // w/o explicit Runnable, a new lambda would be created on each postDelayed, which would not be found again by removeCallbacks
         requestBluetoothPermissionLauncherForStartScan = registerForActivityResult(
                 new ActivityResultContracts.RequestMultiplePermissions(),
                 granted -> BluetoothUtil.onPermissionsResult(this, granted, this::startScan));
@@ -199,15 +199,15 @@ public class DevicesFragment extends ListFragment {
     }
 
     public void startScan() {
-        if(scanState != ScanState.NONE)
+        //if(scanState != ScanState.NONE)
             return;
-        ScanState nextScanState = ScanState.LE_SCAN;
+        //ScanState nextScanState = ScanState.LE_SCAN;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if(!BluetoothUtil.hasPermissions(this, requestBluetoothPermissionLauncherForStartScan))
                 return;
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (getActivity().checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                scanState = ScanState.NONE;
+                //scanState = ScanState.NONE;
                 AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
                 builder.setTitle(R.string.location_permission_title);
                 builder.setMessage(R.string.location_permission_grant);
@@ -225,7 +225,7 @@ public class DevicesFragment extends ListFragment {
                 locationEnabled |= locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
             } catch(Exception ignored) {}
             if(!locationEnabled)
-                scanState = ScanState.DISCOVERY;
+                //scanState = ScanState.DISCOVERY;
             // Starting with Android 6.0 a bluetooth scan requires ACCESS_COARSE_LOCATION permission, but that's not all!
             // LESCAN also needs enabled 'location services', whereas DISCOVERY works without.
             // Most users think of GPS as 'location service', but it includes more, as we see here.
@@ -233,24 +233,24 @@ public class DevicesFragment extends ListFragment {
             // we fall back to the older API that scans for bluetooth classic _and_ LE
             // sometimes the older API returns less results or slower
         }
-        scanState = nextScanState;
+        //scanState = nextScanState;
         listItems.clear();
         listAdapter.notifyDataSetChanged();
         setEmptyText("<scanning...>");
         menu.findItem(R.id.ble_scan).setVisible(false);
         menu.findItem(R.id.ble_scan_stop).setVisible(true);
-        if(scanState == ScanState.LE_SCAN) {
+        //if(scanState == ScanState.LE_SCAN) {
             leScanStopHandler.postDelayed(leScanStopCallback, LE_SCAN_PERIOD);
             new Thread(() -> bluetoothAdapter.startLeScan(null, leScanCallback), "startLeScan")
                     .start(); // start async to prevent blocking UI, because startLeScan sometimes take some seconds
-        } else {
-            bluetoothAdapter.startDiscovery();
-        }
+        //} else {
+        //    bluetoothAdapter.startDiscovery();
+        //}
     }
 
     @SuppressLint("MissingPermission")
     private void updateScan(BluetoothDevice device) {//TODO
-        if(scanState == ScanState.NONE)
+        //if(scanState == ScanState.NONE)
             return;
         BluetoothUtil.Device device2 = new BluetoothUtil.Device(device); // slow getName() only once
         int pos = Collections.binarySearch(listItems, device2);
@@ -262,7 +262,7 @@ public class DevicesFragment extends ListFragment {
 
     @SuppressLint("MissingPermission")
     private void stopScan() {
-        if(scanState == ScanState.NONE)
+        //(scanState == ScanState.NONE)
             return;
         setEmptyText("<no bluetooth devices found>");
         if(menu != null) {
@@ -293,5 +293,5 @@ public class DevicesFragment extends ListFragment {
         Fragment fragment = new TerminalFragment();
         fragment.setArguments(args);
         getFragmentManager().beginTransaction().replace(R.id.fragment, fragment, "terminal").addToBackStack(null).commit();
-    }
+    }*/
 }

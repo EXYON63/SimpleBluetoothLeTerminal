@@ -1,9 +1,22 @@
 package de.kai_morich.simple_bluetooth_le_terminal;
 
-import static androidx.core.graphics.drawable.DrawableKt.toBitmap;
+import static android.app.PendingIntent.getActivity;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
+import android.bluetooth.BluetoothGattService;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanResult;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -11,13 +24,16 @@ import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
-import android.media.Image;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.Size;
+import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
+import androidx.annotation.RequiresPermission;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
@@ -35,21 +51,45 @@ import com.google.common.util.concurrent.ListenableFuture;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity implements FragmentManager.OnBackStackChangedListener {
 
     private PreviewView previewView;
     private ImageView imageViewOverlay;
     private YoloHelper yoloHelper;
+    private static final int REQUEST_CODE_PERMISSIONS = 1001;
+    private static final String TAG = "BLE_Scan";
+
+    private BluetoothLeScanner bluetoothLeScanner;
+    private BluetoothAdapter bluetoothAdapter;
+    private final String TARGET_DEVICE_NAME = "hmsoft";
+    private BluetoothGatt bluetoothGatt;
+
+    private static final UUID HM10_SERVICE_UUID = UUID.fromString("0000FFE0-0000-1000-8000-00805F9B34FB");
+    private static final UUID HM10_CHARACTERISTIC_UUID = UUID.fromString("0000FFE1-0000-1000-8000-00805F9B34FB");
+
+    int speed = 0;
 
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -62,9 +102,11 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
         else
             onBackStackChanged();
 
+        BluetoothManager bluetoothManager = (BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
+        bluetoothAdapter = bluetoothManager.getAdapter();
+
         previewView = findViewById(R.id.previewView);
         imageViewOverlay = findViewById(R.id.imageViewOverlay);
-        new DevicesFragment().startScan();
 
         try {
             yoloHelper = new YoloHelper(this, "yolov5_640.tflite", "coco.txt");
@@ -91,6 +133,7 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
         return true;
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     private void startCamera() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
 
@@ -110,7 +153,6 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
 
                 imageAnalysis.setAnalyzer(Executors.newSingleThreadExecutor(), image -> {
                     Bitmap bitmap = toBitmap(image); // ImageProxy → Bitmap
-                    Log.d("img", bitmap.toString());
                     Bitmap result = yoloHelper.detect(bitmap); // YOLO 실행
                     runOnUiThread(() -> imageViewOverlay.setImageBitmap(result)); // 결과 표시
                     image.close(); // 프레임 릴리스
@@ -129,6 +171,12 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
                 e.printStackTrace();
             }
         }, ContextCompat.getMainExecutor(this));
+
+        if (!hasPermissions()) {
+            requestPermissions();
+        } else {
+            startBleScan();
+        }
     }
 
     private Bitmap toBitmap(ImageProxy image) {
@@ -158,7 +206,7 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
         List<String> detected = yoloHelper.getLastDetectedClasses();  // 이 메서드는 직접 만들어야 함
 
         runOnUiThread(() -> {
-            if (!detected.isEmpty() &&) {
+            if (!detected.isEmpty() && speed >10) {
                 vibrate();
             }
         });
@@ -183,5 +231,185 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
                 v.vibrate(500); // Deprecated, but works on older devices
             }
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void startBleScan() {
+        bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
+        if (bluetoothLeScanner != null) {
+            bluetoothLeScanner.startScan(scanCallback);
+            Log.d(TAG, "BLE scan started");
+        } else {
+            Log.e(TAG, "BluetoothLeScanner is null");
+        }
+    }
+
+    private final ScanCallback scanCallback = new ScanCallback() {
+        @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN})
+        @Override
+        public void onScanResult(int callbackType, @NonNull ScanResult result) {
+            BluetoothDevice device = result.getDevice();
+            String deviceName = device.getName();
+
+            if (deviceName != null) {
+                Log.d(TAG, "Device found: " + deviceName + " (" + device.getAddress() + ")");
+                if (deviceName.equalsIgnoreCase(TARGET_DEVICE_NAME)) {
+                    Log.d(TAG, "Target device found! Connecting to " + deviceName);
+                    stopBleScan();  // 스캔 중지
+                    connectToDevice(device);
+                }
+            }
+        }
+
+        @Override
+        public void onScanFailed(int errorCode) {
+            Log.e(TAG, "Scan failed with error code: " + errorCode);
+        }
+    };
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private void connectToDevice(BluetoothDevice device) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            bluetoothGatt = device.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
+        } else {
+            bluetoothGatt = device.connectGatt(this, false, gattCallback);
+        }
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    private boolean hasPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {  // Android 12 이상
+            return checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+                    && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+        } else {
+            return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        }
+    }
+
+    private void requestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT},
+                    REQUEST_CODE_PERMISSIONS);
+        } else {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    REQUEST_CODE_PERMISSIONS);
+        }
+    }
+
+    private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        @Override
+        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+            super.onConnectionStateChange(gatt, status, newState);
+
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    Log.d(TAG, "Connected to GATT server.");
+                    // 서비스 탐색 시작
+                    bluetoothGatt.discoverServices();
+                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    Log.d(TAG, "Disconnected from GATT server.");
+                }
+            } else {
+                Log.e(TAG, "Connection state change error: " + status);
+                gatt.close();
+            }
+        }
+
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        @Override
+        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+            super.onServicesDiscovered(gatt, status);
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "Services discovered:");
+                BluetoothGattService hm10Service = gatt.getService(HM10_SERVICE_UUID);
+                if (hm10Service != null) {
+                    BluetoothGattCharacteristic characteristic = hm10Service.getCharacteristic(HM10_CHARACTERISTIC_UUID);
+                    if (characteristic != null) {
+                        // Notify 활성화
+                        boolean notifySet = gatt.setCharacteristicNotification(characteristic, true);
+                        Log.d(TAG, "Notify set result: " + notifySet);
+
+                        // CCCD (Client Characteristic Configuration Descriptor) 찾아서 Notify enable 플래그 설정
+                        BluetoothGattDescriptor descriptor = characteristic.getDescriptor(
+                                UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"));
+                        if (descriptor != null) {
+                            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                            boolean writeDesc = gatt.writeDescriptor(descriptor);
+                            Log.d(TAG, "Write descriptor result: " + writeDesc);
+                        } else {
+                            Log.e(TAG, "CCCD descriptor not found!");
+                        }
+                    } else {
+                        Log.e(TAG, "HM-10 characteristic not found!");
+                    }
+                } else {
+                    Log.e(TAG, "HM-10 service not found!");
+                }
+            } else {
+                Log.e(TAG, "Service discovery failed with status: " + status);
+            }
+        }
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt,
+                                            BluetoothGattCharacteristic characteristic) {
+            super.onCharacteristicChanged(gatt, characteristic);
+
+            if (HM10_CHARACTERISTIC_UUID.equals(characteristic.getUuid())) {
+                byte[] data = characteristic.getValue();
+                if (data != null && data.length > 0) {
+                    String received = new String(data);  // 바이트 배열 → 문자열 변환
+                    Log.d(TAG, "HM-10 Data received: " + received);
+                    speed = Integer.parseInt(received.replaceAll("[^0-9]",""));
+                }
+            }
+        }
+
+        // 필요하면 characteristic 읽기/쓰기 콜백도 구현 가능
+    };
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
+    private void stopBleScan() {
+        if (bluetoothLeScanner != null) {
+            bluetoothLeScanner.stopScan(scanCallback);
+            Log.d(TAG, "BLE scan stopped");
+        }
+    }
+
+    private static final String URL = "http://192.168.4.1";
+    private void fetchJsonFromUrl() {
+        OkHttpClient client = new OkHttpClient();
+
+        Request request = new Request.Builder()
+                .url(URL)
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                e.printStackTrace();
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    Log.e(TAG, "Unexpected code " + response);
+                    return;
+                }
+
+                String jsonData = response.body().string();
+
+                try {
+                    JSONObject jsonObject = new JSONObject(jsonData);
+                    int value = jsonObject.getInt("value");
+                    Log.d(TAG, "Value from JSON: " + value);
+                } catch (JSONException e) {
+                    Log.e(TAG, "JSON Parsing error: " + e.getMessage());
+                }
+            }
+        });
     }
 }
