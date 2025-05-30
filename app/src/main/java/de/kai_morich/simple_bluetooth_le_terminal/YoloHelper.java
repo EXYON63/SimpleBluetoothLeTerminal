@@ -45,7 +45,6 @@ public class YoloHelper {
         // 디버깅용 입력 정보 출력
         int[] inputShape = tflite.getInputTensor(0).shape();
         DataType inputType = tflite.getInputTensor(0).dataType();
-        Log.d("YoloHelper", "Input shape: " + java.util.Arrays.toString(inputShape) + ", Type: " + inputType);
     }
 
     // 메인 감지 함수: 입력 비트맵 → 탐지 결과 비트맵 반환
@@ -60,7 +59,6 @@ public class YoloHelper {
 
         // 감지 결과 로그 찍기
         if (nmsDetections.isEmpty()) {
-            Log.d("YoloHelper", "No objects detected.");
         } else {
             for (Detection det : nmsDetections) {
                 String label = labels.get(det.classId);

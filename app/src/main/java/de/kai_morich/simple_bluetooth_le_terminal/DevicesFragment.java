@@ -257,6 +257,7 @@ public class DevicesFragment extends ListFragment {
         if (pos < 0) {
             listItems.add(-pos - 1, device2);
             listAdapter.notifyDataSetChanged();
+            listAdapter.notifyDataSetChanged();
         }
     }
 

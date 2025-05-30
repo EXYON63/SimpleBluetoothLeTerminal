@@ -101,7 +101,7 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
     int speed = 0;
 
 
-    @RequiresApi(api = Build.VERSION_CODES.M)
+    @RequiresApi(api = Build.VERSION_CODES.S)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -125,17 +125,21 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
         } catch (IOException e) {
             e.printStackTrace();
         }
+        Utility.appContext = getApplicationContext();
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
             startCamera();
             wifiReceiver = new WifiConnectionReceiver();
             registerReceiver(wifiReceiver, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
-
-            // WifiNetworkSuggestion 호출 등 나머지 로직 수행
-            setupWifiSuggestion();
+            if(Objects.equals(getCurrentSsid(this), "ESP32CAM_HOTSPOT"))
+                getTrafficStatus();
+            else
+                setupWifiSuggestion();
         } else {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, 101);
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_WIFI_STATE}, 101);
+            setupWifiSuggestion();
         }
     }
 
@@ -156,6 +160,30 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
             } else {
                 Log.d("MainActivity", "Wi-Fi 제안 실패: " + status);
             }
+        }
+    }
+
+    public static String getCurrentSsid(Context context) {
+        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        if (wifiManager == null) return null;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager != null) {
+                for (Network network : connectivityManager.getAllNetworks()) {
+                    NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(network);
+                    if (capabilities != null && capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                        WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                        String ssid = wifiInfo.getSSID();
+                        return ssid != null ? ssid.replace("\"", "") : null;
+                    }
+                }
+            }
+            return null;
+        } else {
+            WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+            String ssid = wifiInfo.getSSID();
+            return ssid != null ? ssid.replace("\"", "") : null;
         }
     }
     @Override
@@ -242,8 +270,23 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
         List<String> detected = yoloHelper.getLastDetectedClasses();  // 이 메서드는 직접 만들어야 함
 
         runOnUiThread(() -> {
-            if (!detected.isEmpty() && speed >10) {
-                vibrate();
+            getTrafficStatus();
+            Log.d("traffic", String.valueOf(traffic));
+            if (!detected.isEmpty()) {
+                if(speed >10)
+                {
+                    vibrate();
+                    Utility.speak("차량 접근 중입니다.");
+                }
+                else Utility.speak("차량이 정지했습니다. 조심히 건너세요.");
+            }
+            else if(Objects.equals(getCurrentSsid(Utility.appContext), "ESP32CAM_HOTSPOT")) {
+                if(traffic) {
+                    vibrate();
+                    Utility.speak("초록불입니다. 조심히 건너세요.");
+                }
+                else
+                    Utility.speak("빨간불입니다.");
             }
         });
         return rotateBitmap(bitmap, rotationDegrees);
@@ -398,7 +441,6 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
                 byte[] data = characteristic.getValue();
                 if (data != null && data.length > 0) {
                     String received = new String(data);  // 바이트 배열 → 문자열 변환
-                    Log.d(TAG, "HM-10 Data received: " + received);
                     speed = Integer.parseInt(received.replaceAll("[^0-9]",""));
                 }
             }
@@ -416,7 +458,7 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
     }
 
     private static final String URL = "http://192.168.4.1/json";
-
+    private boolean traffic = false;
     private void getTrafficStatus() {
         OkHttpClient client = new OkHttpClient();
 
@@ -442,7 +484,7 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
                 try {
                     JSONObject jsonObject = new JSONObject(jsonData);
                     int value = jsonObject.getInt("value");
-                    Log.d(TAG, "Value from JSON: " + value);
+                    traffic = value > 600;
                 } catch (JSONException e) {
                     Log.e(TAG, "JSON Parsing error: " + e.getMessage());
                 }
@@ -468,8 +510,8 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
                     String ssid = wifiInfo.getSSID();
 
                     if (ssid != null && ssid.replace("\"", "").equals("ESP32CAM_HOTSPOT")) {
-                        Log.d("WifiReceiver", "✅ ESP32CAM_HOSPOT에 연결됨!");
-                        // 여기서 연결 성공시 원하는 작업 실행 가능
+                        Log.d("WifiReceiver", "✅ ESP32CAM_HOTSPOT에 연결됨!");
+                        getTrafficStatus();
                     }
                 }
             }
