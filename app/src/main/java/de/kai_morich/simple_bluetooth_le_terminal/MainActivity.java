@@ -142,7 +142,7 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
     private void setupWifiSuggestion() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             WifiNetworkSuggestion suggestion = new WifiNetworkSuggestion.Builder()
-                    .setSsid("ESP32CAM_HOSPOT")
+                    .setSsid("ESP32CAM_HOTSPOT")
                     // .setWpa2Passphrase("your_password") // 필요 시 비밀번호 설정
                     .build();
 
@@ -467,7 +467,7 @@ public class MainActivity extends AppCompatActivity implements FragmentManager.O
                     WifiInfo wifiInfo = wifiManager.getConnectionInfo();
                     String ssid = wifiInfo.getSSID();
 
-                    if (ssid != null && ssid.replace("\"", "").equals("ESP32CAM_HOSPOT")) {
+                    if (ssid != null && ssid.replace("\"", "").equals("ESP32CAM_HOTSPOT")) {
                         Log.d("WifiReceiver", "✅ ESP32CAM_HOSPOT에 연결됨!");
                         // 여기서 연결 성공시 원하는 작업 실행 가능
                     }
